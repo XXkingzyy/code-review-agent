@@ -1,0 +1,13 @@
+# ===== 运行依赖清单（pip install -r requirements.txt 一键安装）=====
+# langchain 1.x：提供 create_agent（基于 LangGraph 的 Agent 工厂）等核心抽象
+langchain>=1.0.0
+# langchain-openai：OpenAI 兼容协议的 ChatModel 实现（也可接 DeepSeek/通义/Ollama 等）
+langchain-openai>=1.0.0
+# langchain-core：消息类型（HumanMessage/AIMessage）、Runnable 基类
+langchain-core>=1.0.0
+# gradio：极简 Web UI 框架，几行代码起一个本地审查页面
+gradio>=5.0.0
+# python-dotenv：从 .env 文件加载环境变量（API Key、Base URL 等）
+python-dotenv>=1.0.0
+# ruff：静态语法/风格检查工具，作为 code_executor 的额外检查依据
+ruff>=0.5.0

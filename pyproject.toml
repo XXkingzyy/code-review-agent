@@ -1,0 +1,15 @@
+# ===== ruff 静态检查配置 =====
+[tool.ruff]
+# 排除 examples 目录：bad_code.py 是故意写差的示例代码（供 Agent 审查），
+# 其"错误"是演示素材，不参与本项目的代码质量检查
+extend-exclude = ["examples"]
+# 单行长度上限 120：本项目注释较多，放宽默认 88
+line-length = 120
+
+[tool.ruff.lint]
+# 开启的规则族：E=语法/格式错误、F=未使用/未定义、I=import 排序、
+# B=易错陷阱、SIM=简化写法、UP=现代化语法、PL=风格类（含 subprocess check）
+select = ["E", "F", "I", "B", "SIM", "UP", "PL"]
+# 忽略 RUF001/002/003：它们把中文全角标点（：；（））当作"歧义字符"误报，
+# 而本项目的注释与 docstring 全部是中文，全角标点是规范用法
+ignore = ["RUF001", "RUF002", "RUF003"]
