@@ -7,6 +7,8 @@ langchain-openai>=1.0.0
 langchain-core>=1.0.0
 # langgraph：Workflow 编排（状态图、条件边、循环）
 langgraph>=1.0.0
+# langgraph-checkpoint-sqlite：SQLite 检查点，支持人工确认暂停与断点恢复
+langgraph-checkpoint-sqlite>=3.0.0
 # gradio：Web 界面
 gradio>=5.0.0
 # python-dotenv：从 .env 加载配置

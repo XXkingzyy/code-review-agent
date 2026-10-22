@@ -117,6 +117,7 @@ def render_workflow_html(state: WorkflowState) -> str:
         "passed": "✅ 最终状态：通过",
         "failed": "❌ 最终状态：未通过",
         "error": "⚠️ 最终状态：流程异常",
+        "awaiting_confirmation": "⏸ 等待人工确认（已暂停在修复前）",
     }.get(final_status, "⏳ 运行中/待运行")
 
     svg = (

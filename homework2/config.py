@@ -37,6 +37,14 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    """读取布尔型环境变量，支持 true/1/yes/on。"""
+    value = os.environ.get(name, "").strip().lower()
+    if not value:
+        return default
+    return value in {"1", "true", "yes", "on"}
+
+
 def has_real_api_key() -> bool:
     """判断 .env 中是否填写了看起来真实的 API Key（而非占位符）。"""
     key = os.environ.get("LLM_API_KEY", "").strip()
@@ -61,6 +69,7 @@ class Settings:
     code_exec_timeout: int
     runs_root: Path
     offline: bool
+    pause_before_fix: bool
 
     @property
     def has_api_key(self) -> bool:
@@ -75,6 +84,7 @@ def load_settings(
     max_rounds: int | None = None,
     pass_threshold: float | None = None,
     runs_root: Path | None = None,
+    pause_before_fix: bool | None = None,
 ) -> Settings:
     """构造运行配置；命令行/Web 的参数优先于 .env。
 
@@ -83,6 +93,7 @@ def load_settings(
         max_rounds：最多审查轮数（含首轮），至少为 1。
         pass_threshold：评分通过阈值（0~10）。
         runs_root：运行产物根目录，默认项目下的 runs/。
+        pause_before_fix：是否在每次修复前暂停，等待人工确认（Checkpoint）。
     """
     settings = Settings(
         llm_base_url=os.environ.get("LLM_BASE_URL", "https://api.deepseek.com/v1"),
@@ -96,12 +107,15 @@ def load_settings(
         code_exec_timeout=_env_int("CODE_EXEC_TIMEOUT", 5),
         runs_root=runs_root or (PROJECT_ROOT / "runs"),
         offline=offline,
+        pause_before_fix=_env_bool("PAUSE_BEFORE_FIX", False),
     )
     # 命令行/Web 覆盖
     if max_rounds is not None:
         settings = replace(settings, max_rounds=max(1, max_rounds))
     if pass_threshold is not None:
         settings = replace(settings, pass_threshold=min(10.0, max(0.0, pass_threshold)))
+    if pause_before_fix is not None:
+        settings = replace(settings, pause_before_fix=pause_before_fix)
     # 工具（复用作Homework1的 code_executor）通过环境变量读取执行超时
     os.environ["CODE_EXEC_TIMEOUT"] = str(settings.code_exec_timeout)
     # 真实模式必须有 Key，提前给出明确提示，避免跑到一半才失败

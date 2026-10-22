@@ -18,7 +18,7 @@ from pathlib import Path
 from code_utils import extract_code_block, extract_json_object, syntax_error
 from config import load_settings
 from review_parser import ReviewParseError, parse_review
-from workflow.graph import run_workflow
+from workflow.graph import resume_workflow, run_workflow
 from workflow.nodes import route_after_review, route_entry
 from workflow.trace import executed_nodes, read_trace
 
@@ -57,6 +57,10 @@ class WorkflowOfflineTest(unittest.TestCase):
             self.assertTrue((run_dir / "90_final_code.py").is_file())
             self.assertTrue((run_dir / "90_final_report.md").is_file())
             self.assertTrue((run_dir / "trace.jsonl").is_file())
+            self.assertTrue((run_dir / "31_diff_v1.txt").is_file())
+            self.assertTrue(state["diffs"])
+            report = (run_dir / "90_final_report.md").read_text(encoding="utf-8")
+            self.assertIn("## 4. 代码变更摘要", report)
 
             senders = {message["sender"] for message in state["messages"]}
             self.assertLessEqual({"coding_agent", "review_agent", "fix_agent", "workflow"}, senders)
@@ -115,6 +119,32 @@ class WorkflowOfflineTest(unittest.TestCase):
             self.assertTrue(state["errors"])
             self.assertTrue((Path(state["run_dir"]) / "90_final_report.md").is_file())
             self.assertEqual(executed_nodes(state["run_dir"]), ["prepare", "coding", "finalize"])
+
+    def test_pause_and_resume(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = _settings(tmp)
+            state = run_workflow(
+                task="实现成绩统计函数",
+                language="python",
+                code="",
+                code_source="task",
+                settings=settings,
+                pause_before_fix=True,
+            )
+            run_dir = Path(state["run_dir"])
+
+            self.assertEqual(state["status"], "awaiting_confirmation")
+            self.assertEqual(state["round"], 1)
+            self.assertTrue((run_dir / "checkpoints.sqlite").is_file())
+            self.assertTrue((run_dir / "99_state.json").is_file())
+            self.assertEqual(executed_nodes(run_dir), ["prepare", "coding", "review"])
+
+            resumed = resume_workflow(run_dir=str(run_dir), settings=settings)
+            self.assertEqual(resumed["status"], "passed")
+            self.assertEqual(resumed["round"], 2)
+            self.assertTrue(resumed["diffs"])
+            self.assertTrue((run_dir / "31_diff_v1.txt").is_file())
+            self.assertIn("## 4. 代码变更摘要", (run_dir / "90_final_report.md").read_text(encoding="utf-8"))
 
     def test_conditional_routing(self) -> None:
         self.assertEqual(route_entry({"status": "running", "code_source": "file", "code": "x"}), "review")
