@@ -2,7 +2,7 @@
 report.py —— 最终报告生成
 ============================
 把整条 Workflow 的过程汇总成一份可提交、可阅读的 Markdown 报告：
-状态、轮数、评分轨迹、最后一轮审查报告、最终代码、运行产物。
+状态、轮数、评分轨迹、最后一轮审查报告、修复 Diff、最终代码、运行产物。
 """
 from __future__ import annotations
 
@@ -12,7 +12,49 @@ _STATUS_TEXT = {
     "passed": "✅ 通过",
     "failed": "❌ 未通过（达到最大轮数或评分不足）",
     "error": "⚠️ 流程异常终止",
+    "awaiting_confirmation": "⏸ 等待人工确认（已暂停在修复前）",
 }
+
+
+def _diff_section(diffs: list[dict]) -> list[str]:
+    """第 4 节：每轮修复前后的 unified diff。"""
+    lines = ["", "## 4. 代码变更摘要", ""]
+    if not diffs:
+        lines.append("- 无（未进入修复阶段或没有代码差异）")
+        return lines
+    for diff in diffs:
+        lines.extend(
+            [
+                f"### 第 {diff.get('round', '?')} 轮修复（+{diff.get('added', 0)} / -{diff.get('removed', 0)} 行）",
+                "",
+                "```diff",
+                str(diff.get("text", "")).strip() or "(无差异)",
+                "```",
+                "",
+            ]
+        )
+    return lines
+
+
+def _message_section(messages: list[dict]) -> list[str]:
+    """第 7 节：Agent 协作记录。"""
+    lines = [
+        "",
+        "## 7. Agent 协作记录",
+        "",
+        "| 时间 | 发送方 | 接收方 | 类型 | 内容 |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    if not messages:
+        lines.append("| - | - | - | - | 无消息记录 |")
+        return lines
+    for message in messages:
+        content = str(message.get("content", "")).replace("|", "\\|").replace("\n", " ")
+        lines.append(
+            f"| {message.get('timestamp', '')} | {message.get('sender', '')} | "
+            f"{message.get('recipient', '')} | {message.get('kind', '')} | {content} |"
+        )
+    return lines
 
 
 def build_final_report(state: WorkflowState, final_status: str) -> str:
@@ -52,58 +94,38 @@ def build_final_report(state: WorkflowState, final_status: str) -> str:
         lines.append("| - | - | - | - | 无审查记录 |")
 
     lines.extend(["", "## 3. 最终审查报告", ""])
-    if review:
-        lines.append(review.get("markdown") or "(审查报告为空)")
-    else:
-        lines.append("(没有可用的审查结果)")
+    lines.append((review or {}).get("markdown") or "(没有可用的审查结果)")
+    lines.extend(_diff_section(state.get("diffs", [])))
 
-    lines.extend(["", "## 4. 运行中的错误", ""])
-    if state.get("errors"):
-        for error in state["errors"]:
-            lines.append(f"- {error}")
+    lines.extend(["", "## 5. 运行中的错误", ""])
+    errors = state.get("errors") or []
+    if errors:
+        lines.extend(f"- {error}" for error in errors)
     else:
         lines.append("- 无")
 
     lines.extend(
         [
             "",
-            "## 5. 最终代码",
+            "## 6. 最终代码",
             "",
             f"```{state.get('language', 'python')}",
             state.get("code", ""),
             "```",
         ]
     )
-
-    messages = state.get("messages", [])
+    lines.extend(_message_section(state.get("messages", [])))
     lines.extend(
         [
             "",
-            "## 6. Agent 协作记录",
-            "",
-            "| 时间 | 发送方 | 接收方 | 类型 | 内容 |",
-            "| --- | --- | --- | --- | --- |",
-        ]
-    )
-    if messages:
-        for message in messages:
-            content = str(message.get("content", "")).replace("|", "\\|").replace("\n", " ")
-            lines.append(
-                f"| {message.get('timestamp', '')} | {message.get('sender', '')} | "
-                f"{message.get('recipient', '')} | {message.get('kind', '')} | {content} |"
-            )
-    else:
-        lines.append("| - | - | - | - | 无消息记录 |")
-
-    lines.extend(
-        [
-            "",
-            "## 7. 运行产物",
+            "## 8. 运行产物",
             "",
             "- `trace.jsonl`：完整执行日志（节点、LLM 调用、工具调用、错误）",
             "- `90_final_code.py`：最终代码",
             "- `20_review_vN.md / .json`：每轮审查报告与结构化结果",
-            "- `99_state.json`：工作流最终状态快照",
+            "- `31_diff_vN.txt`：每轮修复前后的 unified diff",
+            "- `99_state.json`：工作流状态快照（暂停/恢复的兜底信息）",
+            "- `checkpoints.sqlite`：LangGraph 检查点，可用于断点恢复",
         ]
     )
     return "\n".join(lines)

@@ -14,6 +14,7 @@ nodes.py —— Workflow 节点实现
 from __future__ import annotations
 
 import json
+from difflib import unified_diff
 from pathlib import Path
 
 from agents.coding_agent import CodingAgent, code_stats
@@ -29,6 +30,34 @@ def _save(run_dir: str, name: str, content: str) -> None:
     path = Path(run_dir) / name
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
+
+
+def save_state_snapshot(state: WorkflowState, name: str = "99_state.json") -> None:
+    """保存状态快照；既用于收尾，也用于暂停点恢复与排查。"""
+    snapshot = {key: value for key, value in state.items() if key != "final_report"}
+    _save(state["run_dir"], name, json.dumps(snapshot, ensure_ascii=False, indent=2, default=str))
+
+
+def _build_diff(before: str, after: str, round_no: int) -> dict:
+    """生成修复前后的 unified diff，并统计增删行数。"""
+    diff_text = "\n".join(
+        unified_diff(
+            before.splitlines(),
+            after.splitlines(),
+            fromfile=f"修复前（第 {round_no} 轮审查）",
+            tofile=f"修复后（第 {round_no} 轮）",
+            lineterm="",
+        )
+    )
+    added = sum(1 for line in diff_text.splitlines() if line.startswith("+") and not line.startswith("+++"))
+    removed = sum(1 for line in diff_text.splitlines() if line.startswith("-") and not line.startswith("---"))
+    return {
+        "round": round_no,
+        "path": f"31_diff_v{round_no}.txt",
+        "text": diff_text or "（本轮没有代码差异）",
+        "added": added,
+        "removed": removed,
+    }
 
 
 def prepare_node(state: WorkflowState) -> dict:
@@ -172,12 +201,25 @@ def fix_node(state: WorkflowState, agent: FixAgent) -> dict:
         }
 
     _save(state["run_dir"], f"30_code_fix_v{round_no}.py", fixed)
-    logger.event("node_end", node="fix", round=round_no, lines=len(fixed.splitlines()))
-    message = f"第 {round_no} 轮修复完成（{code_stats(fixed)}），提交复审。"
+    diff = _build_diff(state.get("code", ""), fixed, round_no)
+    _save(state["run_dir"], diff["path"], diff["text"] + "\n")
+    logger.event(
+        "node_end",
+        node="fix",
+        round=round_no,
+        lines=len(fixed.splitlines()),
+        diff=diff["path"],
+        added=diff["added"],
+        removed=diff["removed"],
+    )
+    message = (
+        f"第 {round_no} 轮修复完成（{code_stats(fixed)}，+{diff['added']}/-{diff['removed']} 行），提交复审。"
+    )
     return {
         "code": fixed,
         "status": "running",
         "history": [{"version": round_no, "stage": "fix", "lines": len(fixed.splitlines())}],
+        "diffs": [diff],
         "messages": [make_message("fix_agent", "review_agent", "fix", message, round_no)],
     }
 
@@ -199,9 +241,7 @@ def finalize_node(state: WorkflowState) -> dict:
     _save(state["run_dir"], "90_final_code.py", state.get("code", ""))
     _save(state["run_dir"], "90_final_report.md", report)
 
-    # 状态快照：去掉超大的 evidence 字段，避免文件过大
-    snapshot = {key: value for key, value in state.items() if key not in ("final_report",)}
-    _save(state["run_dir"], "99_state.json", json.dumps(snapshot, ensure_ascii=False, indent=2, default=str))
+    save_state_snapshot(state)
 
     logger.event("workflow_end", node="finalize", status=final_status, rounds=state.get("round", 0))
     logger.event("node_end", node="finalize", status=final_status)

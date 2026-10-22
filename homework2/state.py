@@ -56,7 +56,7 @@ class WorkflowState(TypedDict, total=False):
 
     说明：
       - 普通字段后一个节点覆盖前一个节点；
-      - messages / history / reviews / errors 使用 operator.add 归约，
+      - messages / history / reviews / errors / diffs 使用 operator.add 归约，
         节点只需返回“新增的条目”，框架自动追加，避免手工拼接。
     """
 
@@ -72,10 +72,13 @@ class WorkflowState(TypedDict, total=False):
     status: str
     run_dir: str
     final_report: str
+    pause_before_fix: bool
+    offline: bool
     errors: Annotated[list[str], operator.add]
     messages: Annotated[list[AgentMessage], operator.add]
     history: Annotated[list[dict[str, Any]], operator.add]
     reviews: Annotated[list[dict[str, Any]], operator.add]
+    diffs: Annotated[list[dict[str, Any]], operator.add]
 
 
 def now_iso() -> str:
@@ -90,7 +93,7 @@ def make_message(
     content: str,
     round_no: int = 0,
 ) -> AgentMessage:
-    """构造一条 Agent 消息。kind 取值：task/result/review/fix/error/done。"""
+    """构造一条 Agent 消息。kind 取值：task/result/review/fix/pause/resume/error/done。"""
     return AgentMessage(
         timestamp=now_iso(),
         sender=sender,
@@ -110,6 +113,8 @@ def initial_state(
     max_rounds: int,
     threshold: float,
     run_dir: str,
+    pause_before_fix: bool = False,
+    offline: bool = False,
 ) -> WorkflowState:
     """构造工作流初始状态。
 
@@ -130,8 +135,11 @@ def initial_state(
         status="pending",
         run_dir=run_dir,
         final_report="",
+        pause_before_fix=pause_before_fix,
+        offline=offline,
         errors=[],
         messages=[],
         history=[],
         reviews=[],
+        diffs=[],
     )
