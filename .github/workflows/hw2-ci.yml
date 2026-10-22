@@ -1,0 +1,38 @@
+name: HW2 CI
+
+on:
+  push:
+    branches: [hw2-workflow]
+    paths:
+      - 'homework2/**'
+      - '.github/workflows/hw2-ci.yml'
+  pull_request:
+    paths:
+      - 'homework2/**'
+      - '.github/workflows/hw2-ci.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: homework2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: homework2/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run offline tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Lint with ruff
+        run: python -m ruff check .

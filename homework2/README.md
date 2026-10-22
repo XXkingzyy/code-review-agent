@@ -1,5 +1,7 @@
 # 代码审查 Workflow（Homework 2）
 
+![HW2 CI](https://github.com/XXkingzyy/code-review-agent/actions/workflows/hw2-ci.yml/badge.svg?branch=hw2-workflow)
+
 > 在 Homework 1 的代码审查 Agent 基础上，用 **LangGraph** 编排 **编码 Agent → 审查 Agent → 修复 Agent** 的完整协作流水线：审查不通过会自动进入修复循环，直到通过或达到最大轮数。
 
 项目同时提供命令行与 Gradio Web 界面，并支持**离线 Mock 模式**：没有 API Key 也能完整跑通节点、条件分支、修复循环、日志与可视化。
@@ -15,7 +17,10 @@ flowchart TD
     P -->|仅需求| C[coding 编码 Agent]
     C --> R
     R -->|通过 / 达到最大轮数 / 出错| F[finalize 收尾]
-    R -->|未通过且还有轮数| X[fix 修复 Agent]
+    R -->|未通过且还有轮数| Q{修复前人工确认?}
+    Q -->|开启| H[⏸ 暂停并写入 Checkpoint]
+    H -->|确认后 resume| X[fix 修复 Agent]
+    Q -->|关闭| X
     X --> R
     F --> E([结束])
 ```
@@ -45,7 +50,7 @@ prepare → coding → review(2.0 分，未通过) → fix → review(9.5 分，
 | 至少 2 个 Agent 协作完成完整流程 | 3 个 Agent：`coding_agent` / `review_agent` / `fix_agent`，覆盖“生成 → 审查 → 修复”全流程 |
 | Agent 间消息传递或状态共享 | `WorkflowState` 共享状态 + `AgentMessage` 结构化消息；消息写入报告、`trace.jsonl` 与 Web 界面 |
 | 基本顺序流程控制 | LangGraph `StateGraph` 顺序边 + 条件边，五个节点按规则推进 |
-| MVP 可运行 | 离线 `demo` 一键跑通；10 个离线测试；CLI 与 Web 双入口 |
+| MVP 可运行 | 离线 `demo` 一键跑通；11 个离线测试；CLI 与 Web 双入口 |
 
 ### 推荐实现
 
@@ -56,7 +61,7 @@ prepare → coding → review(2.0 分，未通过) → fix → review(9.5 分，
 | 并行执行 | 审查节点的语法检查、复杂度分析、代码执行三个工具并行运行 |
 | 可视化 Workflow 编排界面（可选） | Web 内置内联 SVG 流程图，实时展示已执行/出错/未执行节点与真实执行顺序 |
 | 执行日志与状态追踪 | `trace.jsonl` 记录节点、LLM 调用、工具调用、错误；每轮报告与最终状态全部归档 |
-| 错误处理与恢复 | Agent 重试、节点兜底、图级崩溃兜底三层处理；异常也会生成报告 |
+| 错误处理与恢复 | Agent 重试、节点兜底、图级崩溃兜底三层处理；异常也会生成报告；另支持 Checkpoint 暂停与断点恢复 |
 | 复用项目 1 的 Agent | 复用作业1的 3 个审查工具、审查维度与四段式报告、LLM 重试机制、文件读取工具 |
 
 > 说明：本项目的可视化是“运行状态可视化 + Web 操作台”，编排关系由 `workflow/graph.py` 代码定义，未实现拖拽式 Workflow 编辑器（作业中为可选项）。
@@ -74,7 +79,7 @@ prepare → coding → review(2.0 分，未通过) → fix → review(9.5 分，
 pip install -r requirements.txt
 ```
 
-主要依赖：`langgraph`、`langchain` / `langchain-openai`、`gradio`、`python-dotenv`、`ruff`。
+主要依赖：`langgraph`、`langgraph-checkpoint-sqlite`、`langchain` / `langchain-openai`、`gradio`、`python-dotenv`、`ruff`。
 
 ### 3.2 配置 LLM（真实模式）
 
@@ -139,13 +144,39 @@ python main.py run -f examples/bad_code.py --report
 python main.py web
 ```
 
-浏览器打开 `http://127.0.0.1:7860`。左侧填写需求或代码文件路径，右侧可查看流程图、最终报告、最终代码、执行日志、Agent 消息与产物下载。
+浏览器打开 `http://127.0.0.1:7860`。左侧填写需求或代码文件路径，右侧可查看流程图、最终报告、代码对比、最终代码、执行日志、Agent 消息与产物下载。
 
 没有 API Key 时界面会默认勾选“离线 Mock 模式”；也可以显式启动：
 
 ```bash
 python main.py web --offline --port 7860
 ```
+
+### 3.7 人工确认与断点恢复（Checkpoint）
+
+开启“修复前人工确认”后，每次审查未通过都会暂停在 `fix` 节点之前，状态与检查点写入运行目录：
+
+```bash
+python main.py demo --pause
+# 或
+python main.py run -t "实现一个 LRU 缓存" --pause
+```
+
+暂停时终端会提示恢复命令：
+
+```text
+⏸ 已暂停（等待人工确认）
+已暂停在修复前。确认修复方案后，执行以下命令继续：
+  python main.py resume "runs/20261022-093001-561c65"
+```
+
+```bash
+python main.py resume runs/20261022-093001-561c65
+```
+
+恢复时从 `checkpoints.sqlite` 读取检查点，接着执行 `fix → review`，无需重新编码或重跑已完成的审查。若本次运行是离线模式，恢复会自动沿用 Mock 模型。
+
+Web 界面同样支持：勾选“修复前人工确认”，运行暂停后点击“继续修复（从暂停点恢复）”即可。
 
 ---
 
@@ -156,6 +187,7 @@ python main.py web --offline --port 7860
 | `python main.py demo` | 离线演示：跑通“编码 → 审查 → 修复 → 复审”循环 |
 | `python main.py run -t "需求"` | 从自然语言需求开始 |
 | `python main.py run -f 文件路径` | 从已有代码开始（跳过编码 Agent） |
+| `python main.py resume <run_dir>` | 从暂停点继续执行（断点恢复） |
 | `python main.py web` | 启动 Gradio 界面 |
 
 `run` 通用参数：
@@ -168,9 +200,10 @@ python main.py web --offline --port 7860
 | `--rounds` | 最大审查轮数（含首轮） |
 | `--threshold` | 通过阈值（0~10） |
 | `--offline` | 使用离线 Mock 模型 |
+| `--pause` | 每轮修复前暂停，等待人工确认（Checkpoint） |
 | `--report` | 运行结束后打印完整报告 |
 
-配置也可写入 `.env`：`MAX_ROUNDS`、`PASS_THRESHOLD`、`CODE_EXEC_TIMEOUT`、`LLM_*`。
+配置也可写入 `.env`：`MAX_ROUNDS`、`PASS_THRESHOLD`、`CODE_EXEC_TIMEOUT`、`PAUSE_BEFORE_FIX`、`LLM_*`。
 
 ---
 
@@ -181,7 +214,7 @@ python main.py web --offline --port 7860
 | `prepare` | 写任务说明与输入代码；决定进入编码还是直接审查；输入为空时报错 |
 | `coding` | 调用编码 Agent，提取代码块并做 AST 语法门禁；失败重试一次 |
 | `review` | 并行调用 3 个工具收集证据，再由 LLM 输出报告 + JSON；更新轮数 |
-| `fix` | 把问题清单交给修复 Agent，产出完整代码；随后回到 `review` |
+| `fix` | 把问题清单交给修复 Agent，产出完整代码并生成 `31_diff_vN.txt`；随后回到 `review`（开启人工确认时先暂停） |
 | `finalize` | 判定最终状态，生成报告，落盘最终代码、状态快照与结束日志 |
 
 路由规则（`workflow/nodes.py`）：
@@ -213,9 +246,11 @@ python main.py web --offline --port 7860
 | `10_code_v0.py` | 编码 Agent 生成的初版代码 |
 | `20_review_vN.md` / `.json` | 第 N 轮审查报告与结构化结果 |
 | `30_code_fix_vN.py` | 第 N 轮修复后的代码 |
+| `31_diff_vN.txt` | 第 N 轮修复前后的 unified diff（报告中同步展示） |
 | `90_final_code.py` | 最终代码 |
-| `90_final_report.md` | 最终报告（需求、评分轨迹、审查报告、错误、代码、协作记录、产物清单） |
-| `99_state.json` | 工作流最终状态快照 |
+| `90_final_report.md` | 最终报告（需求、评分轨迹、审查报告、代码变更摘要、错误、代码、协作记录、产物清单） |
+| `99_state.json` | 工作流状态快照（暂停/恢复的兜底信息） |
+| `checkpoints.sqlite` | LangGraph SQLite 检查点，用于人工确认暂停与断点恢复 |
 | `trace.jsonl` | 完整执行日志（JSONL，逐行追加） |
 
 `runs/` 已加入 `.gitignore`，不会提交到仓库。
@@ -273,10 +308,11 @@ python -m ruff check .
 
 当前结果：
 
-- 10 个离线测试全部通过；
-- `ruff` 输出 `All checks passed!`。
+- 11 个离线测试全部通过；
+- `ruff` 输出 `All checks passed!`；
+- GitHub Actions（`.github/workflows/hw2-ci.yml`）在每次推送 `hw2-workflow` 分支时自动运行同一套测试与检查，状态见顶部徽章。
 
-测试覆盖：完整修复循环、已有代码跳过编码、最大轮数终止、LLM 故障进入 error 状态、条件路由、代码块/JSON 解析、语法门禁。
+测试覆盖：完整修复循环、已有代码跳过编码、最大轮数终止、LLM 故障进入 error 状态、修复前后 Diff、人工确认暂停与断点恢复、条件路由、代码块/JSON 解析、语法门禁。
 
 ---
 
@@ -305,10 +341,16 @@ Homework 1 的 `CodeReviewAgent` 是“单 Agent 调工具做审查”；Homewor
 离线模式只替换模型客户端；节点、状态合并、条件边、循环、工具调用、报告生成完全相同。真实模式还需要配置 `.env`。
 
 **为什么运行结束状态是 `failed`？**
-说明达到最大轮数时仍未通过（评分不足或仍存在 critical 问题）。查看 `20_review_vN.md` 与 `trace.jsonl` 定位原因，也可以调大 `--rounds` 或调整 `--threshold`。
+说明达到最大轮数时仍未通过（评分不足或仍存在 critical 问题）。查看 `20_review_vN.md` 与 `trace.jsonl` 定位原因，也可以调大 `--rounds` 或调整 `--threshold`。实测 `examples/bad_code.py` 在真实 DeepSeek 下三轮评分为 3.5 → 6.5 → 7.6，仍未达到默认阈值 8.0；这是阈值严格导致的正常终止，不是流程故障。
+
+**为什么运行停在 `awaiting_confirmation`？**
+开启了 `--pause`（或 Web 勾选了“修复前人工确认”）。这是有意设计的暂停点：检查第 1 轮审查报告后，执行 `python main.py resume <run_dir>` 继续，或点击 Web 的“继续修复”按钮。
+
+**在哪里查看修复前后改了什么？**
+最终报告第 4 节“代码变更摘要”、运行目录的 `31_diff_vN.txt`，以及 Web 界面的“代码对比”页签。
 
 **运行过程中报错怎么办？**
-先看运行目录的 `trace.jsonl`，按 `level=error` 筛选；节点级错误会写入 `state.errors` 并出现在最终报告第 4 节。
+先看运行目录的 `trace.jsonl`，按 `level=error` 筛选；节点级错误会写入 `state.errors` 并出现在最终报告第 5 节。
 
 **生成的代码会被执行吗？**
 审查节点会在子进程中运行代码（默认 5 秒超时），用于复现运行时 Bug。当前隔离仅限独立进程与超时，**不要在生产环境直接执行不可信的模型生成代码**。
