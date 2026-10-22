@@ -1,0 +1,15 @@
+# 本地配置与密钥
+.env
+
+# 运行产物
+runs/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 工具缓存
+.ruff_cache/
+.pytest_cache/

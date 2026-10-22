@@ -1,0 +1,13 @@
+# ===== ruff 静态检查配置 =====
+[tool.ruff]
+# examples 中是故意写差的示例代码，不参与项目质量检查
+extend-exclude = ["examples"]
+line-length = 120
+
+[tool.ruff.lint]
+# E/F：语法与未使用；I：import 排序；B：常见陷阱；SIM：简化；UP：现代语法；PL：风格
+select = ["E", "F", "I", "B", "SIM", "UP", "PL"]
+# 中文全角标点会被 RUF001/002/003 误报，本项目注释均为中文
+# PLR0913/PLR0917：Workflow 节点与运行入口需要显式传递任务、模型、日志等上下文，
+#                  参数数量是编排接口的一部分，不做精简
+ignore = ["RUF001", "RUF002", "RUF003", "PLR0913", "PLR0917"]

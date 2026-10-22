@@ -1,0 +1,15 @@
+# ===== 运行依赖清单（pip install -r requirements.txt 一键安装）=====
+# langchain 1.x：Agent 与工具抽象
+langchain>=1.0.0
+# langchain-openai：OpenAI 兼容协议的 ChatModel（可接 DeepSeek/通义/Ollama）
+langchain-openai>=1.0.0
+# langchain-core：消息类型（HumanMessage/AIMessage）
+langchain-core>=1.0.0
+# langgraph：Workflow 编排（状态图、条件边、循环）
+langgraph>=1.0.0
+# gradio：Web 界面
+gradio>=5.0.0
+# python-dotenv：从 .env 加载配置
+python-dotenv>=1.0.0
+# ruff：静态检查（复用作业1的 syntax_checker 会调用）
+ruff>=0.5.0
